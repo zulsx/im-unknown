@@ -1,7 +1,30 @@
-async execute(interaction) {
-    // 1. Tell Discord "I'm working on it" immediately so it doesn't time out
-    await interaction.deferReply({ ephemeral: true });
+import { 
+  SlashCommandBuilder, 
+  EmbedBuilder, 
+  ActionRowBuilder, 
+  ButtonBuilder, 
+  ButtonStyle, 
+  PermissionFlagsBits 
+} from 'discord.js';
 
+const ROLE_MAP = {
+  'role_black': '1572149360735817758',
+  'role_red': '1572149298827632650',
+  'role_pink': '1572149007713083422',
+  'role_cyan': '1572149494989707762',
+  'role_green': '1572149545239056394',
+  'role_blue': '1572149440343048559',
+  'role_yellow': '1572155820349718668',
+  'role_purple': '1572155997110487218',
+};
+
+export default {
+  data: new SlashCommandBuilder()
+    .setName('setupcolors')
+    .setDescription('Sends the color role selection menu')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  async execute(interaction) {
     const embed = new EmbedBuilder()
       .setTitle('Colors')
       .setDescription(
@@ -34,9 +57,12 @@ async execute(interaction) {
       new ButtonBuilder().setCustomId('role_purple').setLabel('Purple').setStyle(ButtonStyle.Secondary)
     );
 
-    // 2. Use editReply instead of reply to post the menu safely
-    await interaction.editReply({ 
+    await interaction.reply({ 
       embeds: [embed], 
-      components: [row1, row2] 
+      components: [row1, row2], 
+      ephemeral: true 
     });
   },
+};
+
+export { ROLE_MAP };
