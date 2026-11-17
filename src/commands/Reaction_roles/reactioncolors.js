@@ -30,16 +30,23 @@ export default {
       .setDescription(
         '----------------------------------------\n\n' +
         'Black - #BLACK\n' +
+        
         'Red - #RED\n' +
+        
         'Pink - #PINK\n' +
+        
         'Cyan - #CYAN\n' +
+        
         'Green - #GREEN\n' +
+        
         'Blue - #BLUE\n' +
+        
         'Yellow - #YELLOW\n' +
+        
         'Purple - #PURPLE\n' +
         '----------------------------------------'
       )
-      .setImage('https://your-image-link.com/banner.png')
+      .setImage('https://imglink.cc/cdn/ItXrWZQriP.webp')
       .setFooter({ text: 'Click a color button to add or remove that role.' })
       .setColor(0x2f3136);
 
@@ -57,10 +64,10 @@ export default {
       new ButtonBuilder().setCustomId('role_purple').setLabel('Purple').setStyle(ButtonStyle.Secondary)
     );
 
+    // Immediately reply to satisfy Discord's 3-second rule without errors
     await interaction.reply({ 
       embeds: [embed], 
-      components: [row1, row2], 
-      ephemeral: true 
+      components: [row1, row2] 
     });
   },
 };
