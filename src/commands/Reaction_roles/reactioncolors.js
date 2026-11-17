@@ -7,15 +7,16 @@ import {
   PermissionFlagsBits 
 } from 'discord.js';
 
+// Replace these with your actual Role IDs
 const ROLE_MAP = {
-  'role_black': '1572149360735817758',
-  'role_red': '1572149298827632650',
-  'role_pink': '1572149007713083422',
-  'role_cyan': '1572149494989707762',
-  'role_green': '1572149545239056394',
-  'role_blue': '1572149440343048559',
-  'role_yellow': '1572155820349718668',
-  'role_purple': '1572155997110487218',
+  'role_Black': '1572149360735817758',
+  'role_Red': '1572149298827632650',
+  'role_Pink': '1572149607713083422',
+  'role_Cyan': '1572149494097907762',
+  'role_Green': '1572149545239056394',
+  'role_Blue': '1572149440243048559',
+  'role_Yellow': '1572155820349718668',
+  'role_Purple': '1572155997110407218',
 };
 
 export default {
@@ -26,45 +27,39 @@ export default {
 
   async execute(interaction) {
     const embed = new EmbedBuilder()
-      .setTitle('Colors')
+      .setTitle('Colors:')
       .setDescription(
-        '----------------------------------------\n\n' +
-        'Black - #BLACK\n' +
-        
-        'Red - #RED\n' +
-        
-        'Pink - #PINK\n' +
-        
-        'Cyan - #CYAN\n' +
-        
-        'Green - #GREEN\n' +
-        
-        'Blue - #BLUE\n' +
-        
-        'Yellow - #YELLOW\n' +
-        
-        'Purple - #PURPLE\n' +
-        '----------------------------------------'
+        '--------------------------------------------------\n\n' +
+        `• Black - <@&${1572149360735817758}>\n` +
+        `• Red - <@&${1572149298827632650}>\n` +
+        `• Pink - <@&${1572149607713083422}>\n` +
+        `• Cyan - <@&${1572149494097907762}>\n` +
+        `• Green - <@&${1572149545239056394}>\n` +
+        `• Blue - <@&${1572149440243048559}>\n` +
+        `• Yellow - <@&${1572155820349718668}>\n` +
+        `• Purple - <@&${1572155997110407218}>\n` +
+        '--------------------------------------------------'
       )
-      .setImage('https://imglink.cc/cdn/ItXrWZQriP.webp')
+      .setImage('https://imglink.cc/cdn/ItXrWZQriP.webp') // Put your cherry blossom or banner image link here
       .setFooter({ text: 'Click a color button to add or remove that role.' })
       .setColor(0x2f3136);
 
+    // Row 1 (5 buttons)
     const row1 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('role_black').setLabel('Black').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('role_red').setLabel('Red').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('role_Black').setLabel('Black').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('role_Red').setLabel('Red').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('role_pink').setLabel('Pink').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('role_cyan').setLabel('Cyan').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('role_cyan').setLabel('Cyan').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('role_Green').setLabel('Green').setStyle(ButtonStyle.Secondary)
     );
 
+    // Row 2 (5 buttons)
     const row2 = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('role_green').setLabel('Green').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('role_blue').setLabel('Blue').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('role_yellow').setLabel('Yellow').setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('role_purple').setLabel('Purple').setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder().setCustomId('role_Blue').setLabel('Blue').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('role_Yellow').setLabel('Yellow').setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('role_Purple').setLabel('Purple').setStyle(ButtonStyle.Secondary),
     );
 
-    // Immediately reply to satisfy Discord's 3-second rule without errors
     await interaction.reply({ 
       embeds: [embed], 
       components: [row1, row2] 
