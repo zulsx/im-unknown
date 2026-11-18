@@ -7,9 +7,8 @@ const client = new Client({
     ]
 });
 
-const CLIENT_ID = 'YOUR_CLIENT_ID';
-const GUILD_ID = 'YOUR_GUILD_ID';
-const TOKEN = 'YOUR_BOT_TOKEN';
+const CLIENT_ID = '1572086862963544105';
+const GUILD_ID = '1567277756168020109';
 
 // 1. Register the slash command with an interactive role option
 const commands = [
