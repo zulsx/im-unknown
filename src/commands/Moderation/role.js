@@ -1,5 +1,7 @@
 import { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes, PermissionFlagsBits } from 'discord.js';
+import 'dotenv/config';
 
+// 1. Initialize the client with necessary intents
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -7,10 +9,12 @@ const client = new Client({
     ]
 });
 
-const CLIENT_ID = '1572086862963544105';
-const GUILD_ID = '1567277756168020109';
+// Load credentials safely from environment variables
+const CLIENT_ID = 1572086862963544105;
+const GUILD_ID = 1567277756168020109;
+const TOKEN = MTU3MjA4Njg2Mjk2MzU0NDEwNQ.G9XKvI.bYqrANpBr-SIVQD7fVNWJ5O72MSFd4GtbPUJ4s;
 
-// 1. Register the slash command with an interactive role option
+// 2. Register the slash command with a user and role option
 const commands = [
     new SlashCommandBuilder()
         .setName('role')
@@ -23,7 +27,7 @@ const commands = [
             option.setName('target_role')
                 .setDescription('The role you want to give')
                 .setRequired(true))
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles) // Restrict command to mods/admins
+        .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
 ].map(command => command.toJSON());
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
@@ -43,17 +47,15 @@ client.once('ready', async () => {
     }
 });
 
-// 2. Handle command execution dynamically
+// 3. Handle the command execution dynamically
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'role') {
         try {
-            // Get the user and role chosen in the command fields
             const targetUser = interaction.options.getMember('user');
             const targetRole = interaction.options.getRole('target_role');
 
-            // Check if the user already has the role
             if (targetUser.roles.cache.has(targetRole.id)) {
                 return await interaction.reply({ 
                     content: `${targetUser.user.tag} already has the **${targetRole.name}** role!`, 
@@ -61,7 +63,6 @@ client.on('interactionCreate', async interaction => {
                 });
             }
 
-            // Assign the chosen role
             await targetUser.roles.add(targetRole);
             await interaction.reply({ 
                 content: `Successfully gave **${targetRole.name}** to ${targetUser}!`, 
