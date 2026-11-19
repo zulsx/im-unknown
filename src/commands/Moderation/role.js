@@ -12,7 +12,7 @@ const client = new Client({
 // Load credentials safely from environment variables
 const CLIENT_ID = 1572086862963544105;
 const GUILD_ID = 1567277756168020109;
-const TOKEN = MTU3MjA4Njg2Mjk2MzU0NDEwNQ.G9XKvI.bYqrANpBr-SIVQD7fVNWJ5O72MSFd4GtbPUJ4s;
+const TOKEN = ;
 
 // 2. Register the slash command with a user and role option
 const commands = [
