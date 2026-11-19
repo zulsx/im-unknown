@@ -1,110 +1,119 @@
-import { SlashCommandBuilder, PermissionsBitField } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 
 export const data = new SlashCommandBuilder()
   .setName('role')
-  .setDescription('Toggles a role on or off for a user')
-  .addUserOption(option =>
+  .setDescription('Gives a server role to a user (Manage Roles required)')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
+  .addUserOption((option) =>
     option
-      .setName('target')
-      .setDescription('The member to add or remove the role from')
+      .setName('user')
+      .setDescription('The user to give the role to')
       .setRequired(true)
   )
-  .addRoleOption(option =>
+  .addRoleOption((option) =>
     option
       .setName('role')
-      .setDescription('The role to give or take')
+      .setDescription('The role to give')
       .setRequired(true)
   );
 
-/**
- * Core logic to check permissions and toggle the role.
- */
-async function executeRoleToggle(guild, executorMember, targetMember, role) {
-  // Check executor permissions
-  if (!executorMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-    return '❌ You need the **Manage Roles** permission to run this command.';
+async function assignRole({ guild, executor, targetMember, role }) {
+  if (!executor?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    return '❌ You need the **Manage Roles** permission to use this command.';
   }
 
-  // Check bot permissions
-  const botMember = guild.members.me;
-  if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
-    return '❌ I lack the **Manage Roles** permission to edit user roles.';
+  const botMember = guild.members.me ?? (await guild.members.fetchMe().catch(() => null));
+  if (!botMember?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    return '❌ I need the **Manage Roles** permission to assign roles.';
   }
 
-  // Check role hierarchy
+  if (role.managed) {
+    return `❌ **${role.name}** is an integration/bot-managed role and cannot be manually assigned.`;
+  }
+
   if (role.position >= botMember.roles.highest.position) {
-    return `❌ I cannot manage **${role.name}** because it is equal to or higher than my highest role.`;
+    return `❌ I cannot assign **${role.name}** because it is equal to or higher than my highest role.`;
   }
 
-  if (role.position >= executorMember.roles.highest.position && guild.ownerId !== executorMember.id) {
-    return `❌ You cannot manage **${role.name}** because it is equal to or higher than your highest role.`;
+  if (guild.ownerId !== executor.id && role.position >= executor.roles.highest.position) {
+    return `❌ You cannot assign **${role.name}** because it is equal to or higher than your highest role.`;
   }
 
-  // Toggle role
-  try {
-    if (targetMember.roles.cache.has(role.id)) {
-      await targetMember.roles.remove(role);
-      return `✅ Removed **${role.name}** from **${targetMember.user.tag}**.`;
-    } else {
-      await targetMember.roles.add(role);
-      return `✅ Added **${role.name}** to **${targetMember.user.tag}**.`;
-    }
-  } catch (error) {
-    console.error('Error toggling role:', error);
-    return '❌ An error occurred while updating the role.';
+  if (!targetMember) {
+    return '❌ Could not find that user in this server.';
   }
+
+  if (targetMember.roles.cache.has(role.id)) {
+    return `ℹ️ **${targetMember.user.tag}** already has **${role.name}**.`;
+  }
+
+  await targetMember.roles.add(role);
+  return `✅ Gave **${role.name}** to **${targetMember.user.tag}**.`;
 }
 
-/**
- * Handles Slash Command interaction (/role)
- */
 export async function execute(interaction) {
-  // Acknowledge immediately to prevent 10062 / 3-second timeouts
-  await interaction.deferReply({ ephemeral: true });
-
-  const targetMember = interaction.options.getMember('target');
-  const role = interaction.options.getRole('role');
-
-  if (!targetMember || !role) {
-    return interaction.editReply('❌ Could not find that member or role in this server.');
+  try {
+    await interaction.deferReply({ ephemeral: true });
+  } catch (err) {
+    if (err?.code === 10062) return;
+    throw err;
   }
 
-  const response = await executeRoleToggle(
-    interaction.guild,
-    interaction.member,
-    targetMember,
-    role
-  );
+  try {
+    const targetMember = interaction.options.getMember('user');
+    const role = interaction.options.getRole('role');
 
-  await interaction.editReply(response);
+    const result = await assignRole({
+      guild: interaction.guild,
+      executor: interaction.member,
+      targetMember,
+      role,
+    });
+
+    await interaction.editReply(result);
+  } catch (error) {
+    console.error('Error in /role command:', error);
+    await interaction
+      .editReply('❌ Something went wrong while assigning that role.')
+      .catch(() => {});
+  }
 }
 
-/**
- * Handles Prefix command (,role @user @role)
- */
 export async function executePrefix(message, args) {
-  if (args.length < 2) {
-    return message.reply('Usage: `,role @user @role` (or `,role <userID> <roleID/roleName>`)');
+  if (!message.guild || message.author.bot) return;
+
+  if (!message.member?.permissions.has(PermissionFlagsBits.ManageRoles)) {
+    return message.reply('❌ You need the **Manage Roles** permission to use this command.');
   }
 
-  const userMention = args[0].replace(/[<@!>]/g, '');
-  const roleMention = args[1].replace(/[<@&>]/g, '');
+  if (args.length < 2) {
+    return message.reply('Usage: `,role @user @role` (or `,role <userId> <roleId/roleName>`)');
+  }
 
-  const targetMember = await message.guild.members.fetch(userMention).catch(() => null);
+  const userId = args[0].replace(/[<@!>]/g, '');
+  const rawRole = args.slice(1).join(' ').trim();
+  const roleId = rawRole.replace(/[<@&>]/g, '');
+
+  const targetMember = await message.guild.members.fetch(userId).catch(() => null);
   const role =
-    message.guild.roles.cache.get(roleMention) ||
-    message.guild.roles.cache.find(r => r.name.toLowerCase() === args.slice(1).join(' ').toLowerCase());
+    message.guild.roles.cache.get(roleId) ||
+    message.guild.roles.cache.find((r) => r.name.toLowerCase() === rawRole.toLowerCase());
 
   if (!targetMember || !role) {
-    return message.reply('❌ Please mention a valid user and a valid role.');
+    return message.reply('❌ Please provide a valid user and role.');
   }
 
-  const response = await executeRoleToggle(
-    message.guild,
-    message.member,
-    targetMember,
-    role
-  );
+  try {
+    const result = await assignRole({
+      guild: message.guild,
+      executor: message.member,
+      targetMember,
+      role,
+    });
 
-  await message.reply(response);
+    await message.reply(result);
+  } catch (error) {
+    console.error('Error in ,role command:', error);
+    await message.reply('❌ Something went wrong while assigning that role.').catch(() => {});
+  }
 }
