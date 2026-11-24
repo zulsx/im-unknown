@@ -98,7 +98,7 @@ async function ensureColorRoles(guild) {
 function buildDescription(guild) {
   const lines = COLOR_OPTIONS.map((item) => {
     const matchedRole = findColorRole(guild, item);
-    const roleDisplay = matchedRole ? `<@&${matchedRole.id}>` : '`@| RR`';
+    const roleDisplay = matchedRole ? `<@&${matchedRole.id}>` : '`@| ✦`';
     return `✦ ${item.label} - ${roleDisplay}`;
   });
 
@@ -107,6 +107,7 @@ function buildDescription(guild) {
     '────────────────────────',
     ...lines,
     '────────────────────────',
+    '/unkw',
   ].join('\n');
 }
 
