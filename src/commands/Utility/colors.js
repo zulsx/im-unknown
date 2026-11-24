@@ -8,14 +8,14 @@ import {
 } from 'discord.js';
 
 const COLOR_OPTIONS = [
-  { key: 'black',  label: 'Black',  primaryColor: '#0c0c0c', secondaryColor: '#545454', roleId: '1574655385044779088' },
-  { key: 'white',  label: 'White',  primaryColor: '#ffffff', secondaryColor: '#bababa', roleId: '1574655385158287381' },
-  { key: 'pink',   label: 'Pink',   primaryColor: '#f7a9f2', secondaryColor: '#ff5ebf', roleId: '1574655386328375459' },
-  { key: 'cyan',   label: 'Cyan',   primaryColor: '#79ebfa', secondaryColor: '#9fc1ff', roleId: '1574655386957520966' },
-  { key: 'red',    label: 'Red',    primaryColor: '#ed4043', secondaryColor: '#801017', roleId: '1574655387645509742' },
+  { key:  'black',  label: 'Black',  primaryColor: '#0c0c0c', secondaryColor: '#545454', roleId: '1574655385044779088' },
+  { key:  'white',  label: 'White',  primaryColor: '#ffffff', secondaryColor: '#bababa', roleId: '1574655385158287381' },
+  { key:   'pink',   label: 'Pink',   primaryColor: '#f7a9f2', secondaryColor: '#ff5ebf', roleId: '1574655386328375459' },
+  { key:   'cyan',   label: 'Cyan',   primaryColor: '#79ebfa', secondaryColor: '#9fc1ff', roleId: '1574655386957520966' },
+  { key:    'red',    label: 'Red',    primaryColor: '#ed4043', secondaryColor: '#801017', roleId: '1574655387645509742' },
   { key: 'yellow', label: 'Yellow', primaryColor: '#faed30', secondaryColor: '#e6e2b3', roleId: '1574655388324995082' },
-  { key: 'green',  label: 'Green',  primaryColor: '#369876', secondaryColor: '#71ff9e', roleId: '1574655389864173629' },
-  { key: 'blue',   label: 'Blue',   primaryColor: '#181ff7', secondaryColor: '#3e74d8', roleId: '1574655390963077160' },
+  { key:  'green',  label: 'Green',  primaryColor: '#369876', secondaryColor: '#71ff9e', roleId: '1574655389864173629' },
+  { key:   'blue',   label: 'Blue',   primaryColor: '#181ff7', secondaryColor: '#3e74d8', roleId: '1574655390963077160' },
   { key: 'purple', label: 'Purple', primaryColor: '#826bc2', secondaryColor: '#b29efe', roleId: '1574655391864852517' },
   { key: 'orange', label: 'Orange', primaryColor: '#d57b2c', secondaryColor: '#d8ad48', roleId: '1574655393102172170' },
 ];
