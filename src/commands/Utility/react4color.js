@@ -10,16 +10,16 @@ import {
 // Define gradient colors using primaryColor and secondaryColor
 // You can also fill in roleId: '...' to lock directly to an existing role ID
 const COLOR_OPTIONS = [
-  { key: 'black', label: 'Black', primaryColor: '#1a1a1a', secondaryColor: '#4d4d4d', roleId: '' },
-  { key: 'white', label: 'White', primaryColor: '#ffffff', secondaryColor: '#b3b3b3', roleId: '' },
-  { key: 'pink', label: 'Pink', primaryColor: '#ff66c4', secondaryColor: '#ff1493', roleId: '' },
-  { key: 'cyan', label: 'Cyan', primaryColor: '#00ffff', secondaryColor: '#008b8b', roleId: '' },
-  { key: 'red', label: 'Red', primaryColor: '#ff3333', secondaryColor: '#8b0000', roleId: '' },
-  { key: 'yellow', label: 'Yellow', primaryColor: '#ffff33', secondaryColor: '#ff8c00', roleId: '' },
-  { key: 'green', label: 'Green', primaryColor: '#33ff33', secondaryColor: '#006400', roleId: '' },
-  { key: 'blue', label: 'Blue', primaryColor: '#3399ff', secondaryColor: '#00008b', roleId: '' },
-  { key: 'purple', label: 'Purple', primaryColor: '#b366ff', secondaryColor: '#4b0082', roleId: '' },
-  { key: 'orange', label: 'Orange', primaryColor: '#ff9933', secondaryColor: '#cc3300', roleId: '' },
+  { key:  'black', label:  'Black', primaryColor: '#0c0c0c', secondaryColor: '#545454', roleId: '1574655385044779088' },
+  { key:  'white', label:  'White', primaryColor: '#ffffff', secondaryColor: '#bababa', roleId: '1574655385158287381' },
+  { key:   'pink', label:   'Pink', primaryColor: '#f7a9f2', secondaryColor: '#ff5ebf', roleId: '1574655386328375459' },
+  { key:   'cyan', label:   'Cyan', primaryColor: '#79ebfa', secondaryColor: '#9fc1ff', roleId: '1574655386957520966' },
+  { key:    'red', label:    'Red', primaryColor: '#ed4043', secondaryColor: '#801017', roleId: '1574655387645509742' },
+  { key: 'yellow', label: 'Yellow', primaryColor: '#faed30', secondaryColor: '#e6e2b3', roleId: '1574655388324995082' },
+  { key:  'green', label:  'Green', primaryColor: '#369876', secondaryColor: '#71ff9e', roleId: '1574655389864173629' },
+  { key:   'blue', label:   'Blue', primaryColor: '#181ff7', secondaryColor: '#3e74d8', roleId: '1574655390963077160' },
+  { key: 'purple', label: 'Purple', primaryColor: '#826bc2', secondaryColor: '#b29efe', roleId: '1574655391864852517' },
+  { key: 'orange', label: 'Orange', primaryColor: '#d57b2c', secondaryColor: '#d8ad48', roleId: '1574655393102172170' },
 ];
 
 let buttonListenerAttached = false;
@@ -94,7 +94,7 @@ function buildDescription(guild) {
     '────────────────────────',
     ...lines,
     '────────────────────────',
-    '/holyk',
+  ,
   ].join('\n');
 }
 
