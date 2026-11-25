@@ -14,10 +14,13 @@ export default {
       const oldRoles = extractRoleIds(oldMember);
       const newRoles = extractRoleIds(newMember);
 
-      if (
+      const rolesChanged =
         oldRoles.length !== newRoles.length ||
-        oldRoles.some((id) => !newRoles.includes(id))
-      ) {
+        oldRoles.some((id) => !newRoles.includes(id)) ||
+        newRoles.some((id) => !oldRoles.includes(id));
+
+      // Avoid overwriting an existing backup with an empty snapshot
+      if (rolesChanged && newRoles.length > 0) {
         await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
       }
 
@@ -36,14 +39,11 @@ export default {
             ],
             thumbnail: newMember.user.displayAvatarURL({ dynamic: true }),
             userId: newMember.user.id,
-          }
+          },
         });
-
-        return;
       }
-
     } catch (error) {
       logger.error('Error in guildMemberUpdate event:', error);
     }
-  }
+  },
 };
