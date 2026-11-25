@@ -20,7 +20,8 @@ export default {
       try {
         if (guild?.id && user?.id) {
           const roles = extractRoleIds(member);
-          if (roles.length > 0) {
+          // Only attempt a save if Discord cached roles before removal
+          if (roles && roles.length > 0) {
             await saveMemberRoles(guild.id, user.id, roles);
           }
         }
