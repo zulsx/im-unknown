@@ -32,6 +32,8 @@ const BOT_RESPONSES = [
   'KING CYLO.',
 ];
 
+const MUSIC_PREFIX_SHORTCUTS = new Set(['leave', 'pause', 'resume', 'skip', 'stop', 'volume']);
+
 export default {
   name: Events.MessageCreate,
   async execute(message, client) {
@@ -46,14 +48,12 @@ export default {
       }
 
       await handleAutoResponse(message);
-
       await handlePrefixCommand(message, client);
-
       await handleLeveling(message, client);
     } catch (error) {
       logger.error('Error in messageCreate event:', error);
     }
-  }
+  },
 };
 
 async function handleAutoResponse(message) {
@@ -63,9 +63,7 @@ async function handleAutoResponse(message) {
     const userText = message.content.trim().toLowerCase();
     if (!TRIGGER_WORDS.includes(userText)) return;
 
-    const randomReply =
-      BOT_RESPONSES[Math.floor(Math.random() * BOT_RESPONSES.length)];
-
+    const randomReply = BOT_RESPONSES[Math.floor(Math.random() * BOT_RESPONSES.length)];
     await message.channel.send(randomReply);
   } catch (error) {
     logger.error('Error handling auto-response:', error);
@@ -77,17 +75,16 @@ async function handlePrefixCommand(message, client) {
     const guildConfig = await getGuildConfig(client, message.guild.id);
     const prefix = guildConfig?.prefix || getCommandPrefix();
     const parsed = parsePrefixCommand(message.content, prefix);
-    
+
     if (!parsed) {
-      return; 
+      return;
     }
 
     let { commandName, args } = parsed;
-    const musicPrefixShortcut = commandName.toLowerCase();
-    const MUSIC_PREFIX_SHORTCUTS = new Set(['leave', 'pause', 'resume', 'skip', 'stop', 'volume']);
-    if (MUSIC_PREFIX_SHORTCUTS.has(musicPrefixShortcut)) {
+    const shortcutKey = commandName.toLowerCase();
+    if (MUSIC_PREFIX_SHORTCUTS.has(shortcutKey)) {
       commandName = 'music';
-      args = [musicPrefixShortcut, ...args];
+      args = [shortcutKey, ...args];
     }
 
     logger.info(`Prefix command detected: ${commandName}, args: ${args.join(', ')}`);
@@ -98,28 +95,36 @@ async function handlePrefixCommand(message, client) {
 
     if (!command) {
       logger.warn(`Command not found: ${resolvedCommandName}`);
-      return; 
+      return;
     }
 
     if (isMaintenanceMode() && !isBotOwner(message.author.id)) {
-      await message.channel.send({
-        embeds: [createEmbed({
-          title: 'Maintenance Mode',
-          description: getBotMessage('maintenanceMode'),
-          color: 'warning',
-        })],
-      }).catch(() => {});
+      await message.channel
+        .send({
+          embeds: [
+            createEmbed({
+              title: 'Maintenance Mode',
+              description: getBotMessage('maintenanceMode'),
+              color: 'warning',
+            }),
+          ],
+        })
+        .catch(() => {});
       return;
     }
 
     if (!isCommandCategoryEnabled(command.category)) {
-      await message.channel.send({
-        embeds: [createEmbed({
-          title: 'Feature Disabled',
-          description: getBotMessage('commandDisabled'),
-          color: 'error',
-        })],
-      }).catch(() => {});
+      await message.channel
+        .send({
+          embeds: [
+            createEmbed({
+              title: 'Feature Disabled',
+              description: getBotMessage('commandDisabled'),
+              color: 'error',
+            }),
+          ],
+        })
+        .catch(() => {});
       return;
     }
 
@@ -136,7 +141,8 @@ async function handlePrefixCommand(message, client) {
       return;
     }
 
-    if (!(await isCommandEnabled(client, message.guild.id, resolvePrefixAccessKey(command.data, args), command.category))) {
+    const accessKey = resolvePrefixAccessKey(command.data, args);
+    if (!(await isCommandEnabled(client, message.guild.id, accessKey, command.category))) {
       const embed = createEmbed({
         title: 'Command Disabled',
         description: 'This command has been disabled for this server.',
@@ -166,8 +172,10 @@ async function handlePrefixCommand(message, client) {
       return;
     }
 
-    logger.info(`Executing prefix command: ${prefix}${commandName} (resolved to ${resolvedCommandName}) by ${message.author.tag}`);
-    
+    logger.info(
+      `Executing prefix command: ${prefix}${commandName} (resolved to ${resolvedCommandName}) by ${message.author.tag}`,
+    );
+
     await executePrefixCommand(command, message, args, client, prefix, guildConfig);
   } catch (error) {
     logger.error('Error handling prefix command:', error);
@@ -194,7 +202,9 @@ async function handleCountingGame(message, client) {
         currentStreak: 0,
       });
 
-      const failureMessage = await message.channel.send(`❌ Count broken by <@${message.author.id}>. The sequence has been reset to **1**.`);
+      const failureMessage = await message.channel.send(
+        `❌ Count broken by <@${message.author.id}>. The sequence has been reset to **1**.`,
+      );
       setTimeout(() => {
         failureMessage.delete().catch(() => {});
       }, 10000);
@@ -213,13 +223,16 @@ async function handleCountingGame(message, client) {
 async function handleLeveling(message, client) {
   try {
     const rateLimitKey = `xp-event:${message.guild.id}:${message.author.id}`;
-    const canProcess = await checkRateLimit(rateLimitKey, MESSAGE_XP_RATE_LIMIT_ATTEMPTS, MESSAGE_XP_RATE_LIMIT_WINDOW_MS);
+    const canProcess = await checkRateLimit(
+      rateLimitKey,
+      MESSAGE_XP_RATE_LIMIT_ATTEMPTS,
+      MESSAGE_XP_RATE_LIMIT_WINDOW_MS,
+    );
     if (!canProcess) {
       return;
     }
 
     const levelingConfig = await getLevelingConfig(client, message.guild.id);
-    
     if (!levelingConfig?.enabled) {
       return;
     }
@@ -228,11 +241,11 @@ async function handleLeveling(message, client) {
       return;
     }
 
-    if (levelingConfig.ignoredRoles?.length > 0) {
-      const member = await message.guild.members.fetch(message.author.id).catch(() => {
-        return null;
-      });
-      if (member && member.roles.cache.some(role => levelingConfig.ignoredRoles.includes(role.id))) {
+    const member =
+      message.member || (await message.guild.members.fetch(message.author.id).catch(() => null));
+
+    if (levelingConfig.ignoredRoles?.length > 0 && member) {
+      if (member.roles.cache.some((role) => levelingConfig.ignoredRoles.includes(role.id))) {
         return;
       }
     }
@@ -268,11 +281,13 @@ async function handleLeveling(message, client) {
       finalXP = Math.floor(finalXP * levelingConfig.xpMultiplier);
     }
 
-    const result = await addXp(client, message.guild, message.member, finalXP);
+    if (!member) return;
+
+    const result = await addXp(client, message.guild, member, finalXP);
 
     if (result?.leveledUp) {
       logger.info(
-        `${message.author.tag} leveled up to level ${result.level} in ${message.guild.name}`
+        `${message.author.tag} leveled up to level ${result.level} in ${message.guild.name}`,
       );
     }
   } catch (error) {
