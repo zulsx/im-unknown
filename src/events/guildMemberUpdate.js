@@ -9,9 +9,13 @@ export default {
 
   async execute(oldMember, newMember) {
     try {
-      if (!newMember.guild) return;
+      if (!newMember?.guild) return;
 
-      const oldRoles = extractRoleIds(oldMember);
+      const resolvedOldMember = oldMember?.partial
+        ? await oldMember.fetch().catch(() => oldMember)
+        : oldMember;
+
+      const oldRoles = extractRoleIds(resolvedOldMember);
       const newRoles = extractRoleIds(newMember);
 
       const rolesChanged =
@@ -19,7 +23,6 @@ export default {
         oldRoles.some((id) => !newRoles.includes(id)) ||
         newRoles.some((id) => !oldRoles.includes(id));
 
-      // Always save when roles are assigned or updated, as long as member has assigned roles
       if (rolesChanged && newRoles.length > 0) {
         await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
       }
