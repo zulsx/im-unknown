@@ -1,5 +1,6 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { getSavedRoles } from '../../services/roleBackupService.js';
+import { getWelcomeConfig } from '../../utils/database.js';
 import { logger } from '../../utils/logger.js';
 
 export default {
@@ -34,12 +35,6 @@ export default {
       }
 
       const savedRoleIds = await getSavedRoles(guild.id, targetId);
-      if (!savedRoleIds || savedRoleIds.length === 0) {
-        return interaction.reply({
-          content: 'No saved roles found for that user.',
-          ephemeral: true,
-        });
-      }
 
       const member =
         interaction.options.getMember('user') ||
@@ -52,15 +47,30 @@ export default {
         });
       }
 
+      logger.info(
+        `[restore] guild=${guild.id} target=${targetId} savedRoleIds=${JSON.stringify(savedRoleIds)} memberRoles=${JSON.stringify([...member.roles.cache.keys()])}`
+      );
+
+      if (!savedRoleIds || savedRoleIds.length === 0) {
+        return interaction.reply({
+          content: 'No saved roles found for that user.',
+          ephemeral: true,
+        });
+      }
+
       const botMember = guild.members.me;
       const botTopRolePos = botMember?.roles.highest.position ?? 0;
 
       const rolesToAdd = [];
       const skippedRoles = [];
+      const missingRoles = [];
 
       for (const roleId of savedRoleIds) {
         const role = guild.roles.cache.get(roleId);
-        if (!role) continue;
+        if (!role) {
+          missingRoles.push(roleId);
+          continue;
+        }
 
         if (role.managed || role.position >= botTopRolePos) {
           skippedRoles.push(role.name);
@@ -72,11 +82,32 @@ export default {
         }
       }
 
+      // Add back missing restored roles
       if (rolesToAdd.length > 0) {
         await member.roles.add(
           rolesToAdd,
           `Roles restored by ${interaction.user.tag}`
         );
+      }
+
+      // Fetch welcome config to detect and strip auto-entry / no-access roles
+      const welcomeConfig = await getWelcomeConfig(interaction.client, guild.id).catch(() => null);
+      const entryRoleIds = welcomeConfig?.roleIds || [];
+
+      if (entryRoleIds.length > 0) {
+        // Filter for entry roles the user currently has, excluding any entry role that was intentionally restored
+        const entryRolesToRemove = entryRoleIds.filter(
+          (roleId) => member.roles.cache.has(roleId) && !savedRoleIds.includes(roleId)
+        );
+
+        if (entryRolesToRemove.length > 0) {
+          await member.roles.remove(
+            entryRolesToRemove,
+            `Auto-entry role stripped upon role restoration by ${interaction.user.tag}`
+          ).catch((err) => {
+            logger.warn(`Failed to remove auto-entry role(s) for ${member.id}:`, err);
+          });
+        }
       }
 
       const addedNames = rolesToAdd.map((r) => r.name);
@@ -86,6 +117,10 @@ export default {
 
       if (skippedRoles.length > 0) {
         reply += ` *(Skipped higher/integration roles: ${skippedRoles.join(', ')})*`;
+      }
+
+      if (missingRoles.length > 0 && addedNames.length === 0) {
+        reply += ` *(${missingRoles.length} saved role ID(s) no longer exist in this server)*`;
       }
 
       return interaction.reply({ content: reply });
