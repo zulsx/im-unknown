@@ -1,4 +1,4 @@
-import { Events } from 'discord.js';
+import { Events, PermissionsBitField } from 'discord.js';
 import { logger } from '../utils/logger.js';
 import { getLevelingConfig, getUserLevelData } from '../services/leveling/leveling.js';
 import { addXp } from '../services/leveling/xpSystem.js';
@@ -18,6 +18,7 @@ import {
   isValidCountingMessage,
   recordCorrectCount,
 } from '../services/countingGameService.js';
+import { getSavedRoles } from '../services/roleBackupService.js';
 
 const MESSAGE_XP_RATE_LIMIT_ATTEMPTS = 12;
 const MESSAGE_XP_RATE_LIMIT_WINDOW_MS = 10000;
@@ -47,6 +48,10 @@ export default {
 
       await handleAutoResponse(message);
 
+      if (await handleRestoreCommand(message)) {
+        return;
+      }
+
       await handlePrefixCommand(message, client);
 
       await handleLeveling(message, client);
@@ -55,6 +60,88 @@ export default {
     }
   }
 };
+
+async function handleRestoreCommand(message) {
+  try {
+    const content = message.content.trim();
+    if (!content.toLowerCase().startsWith(',restore')) return false;
+
+    const hasPerms =
+      message.member?.permissions.has(PermissionsBitField.Flags.ManageRoles) ||
+      message.member?.permissions.has(PermissionsBitField.Flags.Administrator);
+
+    if (!hasPerms) {
+      await message.channel.send('You need Manage Roles or Administrator permissions to use this command.');
+      return true;
+    }
+
+    const args = content.slice(',restore'.length).trim().split(/\s+/).filter(Boolean);
+    const targetInput = args[0];
+
+    if (!targetInput) {
+      await message.channel.send('Usage: `,restore @person` or `,restore <userID>`');
+      return true;
+    }
+
+    const targetId = targetInput.replace(/[<@!>]/g, '');
+    if (!/^\d{17,20}$/.test(targetId)) {
+      await message.channel.send('Invalid user ID or mention provided.');
+      return true;
+    }
+
+    const savedRoleIds = await getSavedRoles(message.guild.id, targetId);
+    if (!savedRoleIds || savedRoleIds.length === 0) {
+      await message.channel.send('No saved roles found for that user.');
+      return true;
+    }
+
+    const member = await message.guild.members.fetch(targetId).catch(() => null);
+    if (!member) {
+      await message.channel.send('User is not currently in the server. Have them rejoin first, then run `,restore`.');
+      return true;
+    }
+
+    const botMember = message.guild.members.me;
+    const botTopRolePos = botMember?.roles.highest.position ?? 0;
+
+    const rolesToAdd = [];
+    const skippedRoles = [];
+
+    for (const roleId of savedRoleIds) {
+      const role = message.guild.roles.cache.get(roleId);
+      if (!role) continue;
+
+      if (role.managed || role.position >= botTopRolePos) {
+        skippedRoles.push(role.name);
+        continue;
+      }
+
+      if (!member.roles.cache.has(role.id)) {
+        rolesToAdd.push(role);
+      }
+    }
+
+    if (rolesToAdd.length > 0) {
+      await member.roles.add(rolesToAdd, `Roles restored by ${message.author.tag} via ,restore`);
+    }
+
+    const addedNames = rolesToAdd.map((r) => r.name);
+    let reply = addedNames.length
+      ? `Successfully restored ${addedNames.length} role(s) for ${member.user.tag}: **${addedNames.join(', ')}**`
+      : `No new roles needed to be added to ${member.user.tag}.`;
+
+    if (skippedRoles.length > 0) {
+      reply += ` *(Skipped higher/integration roles: ${skippedRoles.join(', ')})*`;
+    }
+
+    await message.channel.send(reply);
+    return true;
+  } catch (error) {
+    logger.error('Error handling ,restore command:', error);
+    await message.channel.send('Something went wrong while restoring roles. Check my Manage Roles permission and role position.');
+    return true;
+  }
+}
 
 async function handleAutoResponse(message) {
   try {
