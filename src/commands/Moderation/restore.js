@@ -75,34 +75,34 @@ export default {
       const savedRoleIds = await getSavedRoles(guild.id, targetId);
       console.log(`[DEBUG restore] guild=${guild.id} target=${targetId} savedRoleIds=`, savedRoleIds);
 
+      const executorId =
+        interaction.user?.id ||
+        interaction.author?.id ||
+        interaction.member?.user?.id ||
+        null;
+      const executorMention = executorId ? `<@${executorId}>` : 'Moderator';
+      const targetMention = `<@${member.id}>`;
+
       if (!savedRoleIds || savedRoleIds.length === 0) {
-        const noRolesEmbed = new EmbedBuilder()
+        const emptyEmbed = new EmbedBuilder()
           .setColor('#000000')
-          .setDescription(`No saved roles found for **${member.user.tag}**.`);
-        return sendResponse(interaction, { embeds: [noRolesEmbed] });
+          .setDescription(`${executorMention} : No saved roles found for ${targetMention}`);
+        return sendResponse(interaction, { embeds: [emptyEmbed] });
       }
 
-      const botMember = guild.members.me || (await guild.members.fetchMe().catch(() => null));
-      const botTopRolePos = botMember?.roles?.highest?.position ?? 0;
-
       const rolesToAdd = [];
-      const skippedRoles = [];
-      const missingRoles = [];
+      const roleNames = [];
 
       for (const roleId of savedRoleIds) {
-        if (roleId === guild.id) continue;
+        if (String(roleId) === String(guild.id)) continue;
 
-        const role = guild.roles.cache.get(roleId) || (await guild.roles.fetch(roleId).catch(() => null));
-        if (!role) {
-          missingRoles.push(roleId);
-          continue;
-        }
+        const role =
+          guild.roles.cache.get(roleId) ||
+          (await guild.roles.fetch(roleId).catch(() => null));
 
-        if (role.managed || role.position >= botTopRolePos) {
-          skippedRoles.push(role.name);
-          continue;
-        }
+        if (!role) continue;
 
+        roleNames.push(role.name);
         if (!member.roles.cache.has(role.id)) {
           rolesToAdd.push(role);
         }
@@ -135,31 +135,12 @@ export default {
         }
       }
 
-      const addedNames = rolesToAdd.map((r) => r.name);
-      
-      let mainText = addedNames.length > 0
-        ? `Restored **${addedNames.length}** role(s) for **${member.user.tag}**:\n${addedNames.map(name => `\`${name}\``).join(', ')}`
-        : `**${member.user.tag}** already has all restorable saved roles.`;
+      const formattedRoles =
+        roleNames.length > 0 ? ` **${roleNames.join(', ')}**` : ' *(none)*';
 
       const embed = new EmbedBuilder()
         .setColor('#000000')
-        .setDescription(mainText)
-        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
-        .setTimestamp();
-
-      if (skippedRoles.length > 0) {
-        embed.addFields({
-          name: 'Skipped Roles (Hierarchy / Bot-Managed)',
-          value: skippedRoles.map(name => `\`${name}\``).join(', '),
-        });
-      }
-
-      if (missingRoles.length > 0 && addedNames.length === 0) {
-        embed.addFields({
-          name: 'Deleted Server Roles',
-          value: `${missingRoles.length} saved role(s) no longer exist in this server.`,
-        });
-      }
+        .setDescription(`${executorMention} : Restored roles to ${targetMention} :${formattedRoles}`);
 
       return sendResponse(interaction, { embeds: [embed] });
     } catch (error) {
