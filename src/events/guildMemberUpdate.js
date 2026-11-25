@@ -1,5 +1,6 @@
 import { Events } from 'discord.js';
 import { logEvent, EVENT_TYPES } from '../services/loggingService.js';
+import { extractRoleIds, saveMemberRoles } from '../services/roleBackupService.js';
 import { logger } from '../utils/logger.js';
 
 export default {
@@ -9,6 +10,16 @@ export default {
   async execute(oldMember, newMember) {
     try {
       if (!newMember.guild) return;
+
+      const oldRoles = extractRoleIds(oldMember);
+      const newRoles = extractRoleIds(newMember);
+
+      if (
+        oldRoles.length !== newRoles.length ||
+        oldRoles.some((id) => !newRoles.includes(id))
+      ) {
+        await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
+      }
 
       if (oldMember.nickname !== newMember.nickname) {
         await logEvent({
