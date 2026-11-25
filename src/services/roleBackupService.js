@@ -1,67 +1,104 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import pg from 'pg';
+import { logger } from '../utils/logger.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Pool } = pg;
 
-// Resolves to <project-root>/data/roleBackups.json regardless of working directory
-const DATA_DIR = path.resolve(__dirname, '../../data');
-const BACKUP_FILE = path.join(DATA_DIR, 'roleBackups.json');
+const memoryBackups = new Map(); // guildId -> Map(userId -> string[])
+let pool = null;
+let tableReady = false;
 
-const backups = new Map();
-let isLoaded = false;
+function getPool() {
+  if (pool) return pool;
+  const connectionString =
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_RESTORE_URL;
 
-async function ensureLoaded() {
-  if (isLoaded) return;
-  isLoaded = true;
+  if (!connectionString) return null;
 
-  try {
-    const raw = await fs.readFile(BACKUP_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    for (const [guildId, usersObj] of Object.entries(parsed)) {
-      if (usersObj && typeof usersObj === 'object') {
-        backups.set(guildId, new Map(Object.entries(usersObj)));
-      }
-    }
-  } catch (error) {
-    if (error.code !== 'ENOENT') {
-      console.error('Failed to load role backups:', error);
-    }
-  }
+  pool = new Pool({
+    connectionString,
+    ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
+      ? false
+      : { rejectUnauthorized: false },
+  });
+
+  return pool;
 }
 
-async function saveToDisk() {
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const dataObj = {};
-    for (const [guildId, userMap] of backups.entries()) {
-      dataObj[guildId] = Object.fromEntries(userMap.entries());
-    }
-    await fs.writeFile(BACKUP_FILE, JSON.stringify(dataObj, null, 2), 'utf8');
-  } catch (error) {
-    console.error('Failed to save role backups:', error);
-  }
+async function ensureTable() {
+  const dbPool = getPool();
+  if (!dbPool || tableReady) return;
+
+  await dbPool.query(`
+    CREATE TABLE IF NOT EXISTS role_backups (
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (guild_id, user_id)
+    );
+  `);
+
+  tableReady = true;
+}
+
+function sanitizeRoleIds(guildId, roleIds = []) {
+  return [...new Set(roleIds)].filter((id) => Boolean(id) && String(id) !== String(guildId));
 }
 
 export async function saveMemberRoles(guildId, userId, roleIds = []) {
   if (!guildId || !userId) return;
 
-  await ensureLoaded();
-  if (!backups.has(guildId)) {
-    backups.set(guildId, new Map());
-  }
+  const cleanRoles = sanitizeRoleIds(guildId, roleIds);
 
-  // Filter out @everyone ID (which equals the guildId) and deduplicate
-  const cleanRoles = [...new Set(roleIds)].filter((id) => Boolean(id) && id !== guildId);
-  backups.get(guildId).set(userId, cleanRoles);
-  await saveToDisk();
+  if (!memoryBackups.has(guildId)) {
+    memoryBackups.set(guildId, new Map());
+  }
+  memoryBackups.get(guildId).set(userId, cleanRoles);
+
+  try {
+    await ensureTable();
+    const dbPool = getPool();
+    if (!dbPool) return;
+
+    await dbPool.query(
+      `
+      INSERT INTO role_backups (guild_id, user_id, role_ids, updated_at)
+      VALUES ($1, $2, $3::jsonb, NOW())
+      ON CONFLICT (guild_id, user_id)
+      DO UPDATE SET role_ids = EXCLUDED.role_ids, updated_at = NOW();
+      `,
+      [String(guildId), String(userId), JSON.stringify(cleanRoles)]
+    );
+
+    logger.debug(`[roleBackupService] Saved ${cleanRoles.length} roles for ${userId} in guild ${guildId}`);
+  } catch (error) {
+    logger.error('[roleBackupService] Failed to save role backup to PostgreSQL:', error);
+  }
 }
 
 export async function getSavedRoles(guildId, userId) {
   if (!guildId || !userId) return [];
-  await ensureLoaded();
-  return backups.get(guildId)?.get(userId) ?? [];
+
+  try {
+    await ensureTable();
+    const dbPool = getPool();
+    if (dbPool) {
+      const { rows } = await dbPool.query(
+        `SELECT role_ids FROM role_backups WHERE guild_id = $1 AND user_id = $2`,
+        [String(guildId), String(userId)]
+      );
+
+      if (rows.length > 0 && Array.isArray(rows[0].role_ids)) {
+        return sanitizeRoleIds(guildId, rows[0].role_ids);
+      }
+    }
+  } catch (error) {
+    logger.error('[roleBackupService] Failed to read role backup from PostgreSQL:', error);
+  }
+
+  return memoryBackups.get(guildId)?.get(userId) ?? [];
 }
 
 export function extractRoleIds(member) {
