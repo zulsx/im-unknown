@@ -1,7 +1,12 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DATA_DIR = path.resolve('data');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Resolves to <project-root>/data/roleBackups.json regardless of working directory
+const DATA_DIR = path.resolve(__dirname, '../../data');
 const BACKUP_FILE = path.join(DATA_DIR, 'roleBackups.json');
 
 const backups = new Map();
@@ -15,7 +20,9 @@ async function ensureLoaded() {
     const raw = await fs.readFile(BACKUP_FILE, 'utf8');
     const parsed = JSON.parse(raw);
     for (const [guildId, usersObj] of Object.entries(parsed)) {
-      backups.set(guildId, new Map(Object.entries(usersObj)));
+      if (usersObj && typeof usersObj === 'object') {
+        backups.set(guildId, new Map(Object.entries(usersObj)));
+      }
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {
@@ -37,24 +44,28 @@ async function saveToDisk() {
   }
 }
 
-export async function saveMemberRoles(guildId, userId, roleIds) {
+export async function saveMemberRoles(guildId, userId, roleIds = []) {
+  if (!guildId || !userId) return;
+
   await ensureLoaded();
   if (!backups.has(guildId)) {
     backups.set(guildId, new Map());
   }
 
-  // Filter out @everyone ID (which equals the guildId)
-  const cleanRoles = [...new Set(roleIds)].filter((id) => id !== guildId);
+  // Filter out @everyone ID (which equals the guildId) and deduplicate
+  const cleanRoles = [...new Set(roleIds)].filter((id) => Boolean(id) && id !== guildId);
   backups.get(guildId).set(userId, cleanRoles);
   await saveToDisk();
 }
 
 export async function getSavedRoles(guildId, userId) {
+  if (!guildId || !userId) return [];
   await ensureLoaded();
   return backups.get(guildId)?.get(userId) ?? [];
 }
 
 export function extractRoleIds(member) {
+  if (!member?.roles?.cache || !member?.guild?.id) return [];
   return member.roles.cache
     .filter((role) => role.id !== member.guild.id)
     .map((role) => role.id);
