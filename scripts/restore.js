@@ -1,137 +1,113 @@
-import { spawnSync } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import dotenv from 'dotenv';
-import { logger } from '../src/utils/logger.js';
+import { SlashCommandBuilder } from 'discord.js';
+import { getSavedRoles } from '../../services/roleBackupService.js';
+import { logger } from '../../utils/logger.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+export default {
+  data: new SlashCommandBuilder()
+    .setName('restore')
+    .setDescription("Restore a member's previously saved server roles")
+    .addUserOption((option) =>
+      option
+        .setName('user')
+        .setDescription('The member whose roles you want to restore')
+        .setRequired(true)
+    ),
 
-function parseArgs(argv) {
-  const args = {};
+  async execute(interaction) {
+    try {
+      const guild = interaction.guild;
+      if (!guild) {
+        return interaction.reply({
+          content: 'This command can only be used inside a server.',
+          ephemeral: true,
+        });
+      }
 
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (!token.startsWith('--')) {
-      continue;
+      const targetUser = interaction.options.getUser('user', true);
+      const targetId = targetUser?.id;
+
+      if (!targetId || !/^\d{17,20}$/.test(targetId)) {
+        return interaction.reply({
+          content: 'Invalid user ID or mention provided.',
+          ephemeral: true,
+        });
+      }
+
+      const savedRoleIds = await getSavedRoles(guild.id, targetId);
+
+      const member =
+        interaction.options.getMember('user') ||
+        (await guild.members.fetch(targetId).catch(() => null));
+
+      if (!member) {
+        return interaction.reply({
+          content: 'User is not currently in the server. Have them rejoin first, then run restore.',
+          ephemeral: true,
+        });
+      }
+
+      logger.info(
+        `[restore] guild=${guild.id} target=${targetId} savedRoleIds=${JSON.stringify(savedRoleIds)} memberRoles=${JSON.stringify([...member.roles.cache.keys()])}`
+      );
+
+      if (!savedRoleIds || savedRoleIds.length === 0) {
+        return interaction.reply({
+          content: 'No saved roles found for that user.',
+          ephemeral: true,
+        });
+      }
+
+      const botMember = guild.members.me;
+      const botTopRolePos = botMember?.roles.highest.position ?? 0;
+
+      const rolesToAdd = [];
+      const skippedRoles = [];
+      const missingRoles = [];
+
+      for (const roleId of savedRoleIds) {
+        const role = guild.roles.cache.get(roleId);
+        if (!role) {
+          missingRoles.push(roleId);
+          continue;
+        }
+
+        if (role.managed || role.position >= botTopRolePos) {
+          skippedRoles.push(role.name);
+          continue;
+        }
+
+        if (!member.roles.cache.has(role.id)) {
+          rolesToAdd.push(role);
+        }
+      }
+
+      if (rolesToAdd.length > 0) {
+        await member.roles.add(
+          rolesToAdd,
+          `Roles restored by ${interaction.user.tag}`
+        );
+      }
+
+      const addedNames = rolesToAdd.map((r) => r.name);
+      let reply = addedNames.length
+        ? `Successfully restored ${addedNames.length} role(s) for ${member.user.tag}: **${addedNames.join(', ')}**`
+        : `No new roles needed to be added to ${member.user.tag}.`;
+
+      if (skippedRoles.length > 0) {
+        reply += ` *(Skipped higher/integration roles: ${skippedRoles.join(', ')})*`;
+      }
+
+      if (missingRoles.length > 0 && addedNames.length === 0) {
+        reply += ` *(${missingRoles.length} saved role ID(s) no longer exist in this server)*`;
+      }
+
+      return interaction.reply({ content: reply });
+    } catch (error) {
+      logger.error('Error in restore command:', error);
+      return interaction.reply({
+        content: 'Something went wrong while restoring roles. Check my Manage Roles permission and role position.',
+        ephemeral: true,
+      });
     }
-
-    const [rawKey, inlineValue] = token.slice(2).split('=');
-    if (typeof inlineValue !== 'undefined') {
-      args[rawKey] = inlineValue;
-      continue;
-    }
-
-    const nextToken = argv[index + 1];
-    if (!nextToken || nextToken.startsWith('--')) {
-      args[rawKey] = true;
-      continue;
-    }
-
-    args[rawKey] = nextToken;
-    index += 1;
-  }
-
-  return args;
-}
-
-function ensureCommand(command) {
-  const result = spawnSync(command, ['--version'], {
-    encoding: 'utf8',
-    stdio: 'pipe',
-    shell: process.platform === 'win32'
-  });
-
-  if (result.status !== 0) {
-    throw new Error(`${command} is required but was not found in PATH.`);
-  }
-}
-
-async function resolveLatestBackup(backupDir) {
-  const entries = await readdir(backupDir, { withFileTypes: true });
-  const dumpFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.dump'))
-    .map((entry) => entry.name)
-    .sort((left, right) => right.localeCompare(left));
-
-  if (dumpFiles.length === 0) {
-    throw new Error(`No .dump backup files found in ${backupDir}`);
-  }
-
-  return path.join(backupDir, dumpFiles[0]);
-}
-
-function runCommand(command, args) {
-  const result = spawnSync(command, args, {
-    encoding: 'utf8',
-    stdio: 'pipe',
-    shell: process.platform === 'win32'
-  });
-
-  if (result.status !== 0) {
-    throw new Error(`${command} failed: ${result.stderr || result.stdout || 'Unknown error'}`);
-  }
-}
-
-async function run() {
-  const args = parseArgs(process.argv.slice(2));
-  const backupDir = path.resolve(args['backup-dir'] || process.env.BACKUP_DIR || path.join(process.cwd(), 'backups'));
-  const targetUrl = args['target-url'] || process.env.POSTGRES_RESTORE_URL || process.env.POSTGRES_URL;
-
-  if (!targetUrl) {
-    throw new Error('Missing target database URL. Set POSTGRES_RESTORE_URL or POSTGRES_URL.');
-  }
-
-  if (!args.confirm) {
-    throw new Error('Restore requires explicit confirmation. Re-run with --confirm.');
-  }
-
-  ensureCommand('pg_restore');
-  ensureCommand('psql');
-
-  const inputPath = args.input ? path.resolve(args.input) : await resolveLatestBackup(backupDir);
-  const dropSchema = args['drop-schema'] === true || args['drop-schema'] === 'true';
-
-  logger.warn('Starting database restore', {
-    event: 'restore.start',
-    inputPath,
-    targetUrl,
-    dropSchema
-  });
-
-  if (dropSchema) {
-    runCommand('psql', [
-      '--dbname',
-      targetUrl,
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-c',
-      'DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;'
-    ]);
-  }
-
-  runCommand('pg_restore', [
-    '--clean',
-    '--if-exists',
-    '--no-owner',
-    '--no-privileges',
-    '--dbname',
-    targetUrl,
-    inputPath
-  ]);
-
-  logger.info('Database restore completed', {
-    event: 'restore.completed',
-    inputPath,
-    targetUrl
-  });
-}
-
-run().catch((error) => {
-  logger.error('Restore command failed', {
-    event: 'restore.failed',
-    error: error.message
-  });
-  process.exit(1);
-});
+  },
+};
