@@ -3,24 +3,29 @@ import { logger } from '../utils/logger.js';
 
 const { Pool } = pg;
 
-const memoryBackups = new Map(); // guildId -> Map(userId -> string[])
+const memoryBackups = new Map(); // `${guildId}:${userId}` -> string[]
 let pool = null;
 let tableReady = false;
 
 function getPool() {
   if (pool) return pool;
+
   const connectionString =
     process.env.DATABASE_URL ||
     process.env.POSTGRES_URL ||
     process.env.POSTGRES_RESTORE_URL;
 
-  if (!connectionString) return null;
+  if (!connectionString) {
+    logger.warn('[roleBackupService] No PostgreSQL connection string found in env; using memory fallback only.');
+    return null;
+  }
 
   pool = new Pool({
     connectionString,
-    ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
-      ? false
-      : { rejectUnauthorized: false },
+    ssl:
+      connectionString.includes('localhost') || connectionString.includes('127.0.0.1')
+        ? false
+        : { rejectUnauthorized: false },
   });
 
   return pool;
@@ -44,18 +49,34 @@ async function ensureTable() {
 }
 
 function sanitizeRoleIds(guildId, roleIds = []) {
-  return [...new Set(roleIds)].filter((id) => Boolean(id) && String(id) !== String(guildId));
+  const gId = String(guildId);
+  return [...new Set((Array.isArray(roleIds) ? roleIds : []).map(String))].filter(
+    (id) => Boolean(id) && id !== gId
+  );
+}
+
+function parseRoleIdsColumn(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
 }
 
 export async function saveMemberRoles(guildId, userId, roleIds = []) {
   if (!guildId || !userId) return;
 
-  const cleanRoles = sanitizeRoleIds(guildId, roleIds);
+  const gId = String(guildId);
+  const uId = String(userId);
+  const cleanRoles = sanitizeRoleIds(gId, roleIds);
+  const key = `${gId}:${uId}`;
 
-  if (!memoryBackups.has(guildId)) {
-    memoryBackups.set(guildId, new Map());
-  }
-  memoryBackups.get(guildId).set(userId, cleanRoles);
+  memoryBackups.set(key, cleanRoles);
 
   try {
     await ensureTable();
@@ -69,10 +90,10 @@ export async function saveMemberRoles(guildId, userId, roleIds = []) {
       ON CONFLICT (guild_id, user_id)
       DO UPDATE SET role_ids = EXCLUDED.role_ids, updated_at = NOW();
       `,
-      [String(guildId), String(userId), JSON.stringify(cleanRoles)]
+      [gId, uId, JSON.stringify(cleanRoles)]
     );
 
-    logger.debug(`[roleBackupService] Saved ${cleanRoles.length} roles for ${userId} in guild ${guildId}`);
+    logger.info(`[roleBackupService] Saved ${cleanRoles.length} roles for ${uId} in guild ${gId}`);
   } catch (error) {
     logger.error('[roleBackupService] Failed to save role backup to PostgreSQL:', error);
   }
@@ -81,29 +102,36 @@ export async function saveMemberRoles(guildId, userId, roleIds = []) {
 export async function getSavedRoles(guildId, userId) {
   if (!guildId || !userId) return [];
 
+  const gId = String(guildId);
+  const uId = String(userId);
+  const key = `${gId}:${uId}`;
+
   try {
     await ensureTable();
     const dbPool = getPool();
     if (dbPool) {
       const { rows } = await dbPool.query(
         `SELECT role_ids FROM role_backups WHERE guild_id = $1 AND user_id = $2`,
-        [String(guildId), String(userId)]
+        [gId, uId]
       );
 
-      if (rows.length > 0 && Array.isArray(rows[0].role_ids)) {
-        return sanitizeRoleIds(guildId, rows[0].role_ids);
+      if (rows.length > 0) {
+        const cleanRoles = sanitizeRoleIds(gId, parseRoleIdsColumn(rows[0].role_ids));
+        memoryBackups.set(key, cleanRoles);
+        return cleanRoles;
       }
     }
   } catch (error) {
     logger.error('[roleBackupService] Failed to read role backup from PostgreSQL:', error);
   }
 
-  return memoryBackups.get(guildId)?.get(userId) ?? [];
+  return memoryBackups.get(key) ?? [];
 }
 
 export function extractRoleIds(member) {
   if (!member?.roles?.cache || !member?.guild?.id) return [];
+  const guildId = String(member.guild.id);
   return member.roles.cache
-    .filter((role) => role.id !== member.guild.id)
-    .map((role) => role.id);
+    .filter((role) => String(role.id) !== guildId)
+    .map((role) => String(role.id));
 }
