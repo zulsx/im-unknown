@@ -23,11 +23,16 @@ export default {
         oldRoles.some((id) => !newRoles.includes(id)) ||
         newRoles.some((id) => !oldRoles.includes(id));
 
+      // Save when roles change and the member has non-@everyone roles
       if (rolesChanged && newRoles.length > 0) {
+        console.log(
+          `[DEBUG guildMemberUpdate] saving ${newRoles.length} roles for ${newMember.id} in ${newMember.guild.id}:`,
+          newRoles
+        );
         await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
       }
 
-      if (oldMember.nickname !== newMember.nickname) {
+      if (resolvedOldMember?.nickname !== newMember.nickname) {
         await logEvent({
           client: newMember.client,
           guildId: newMember.guild.id,
@@ -37,7 +42,7 @@ export default {
             lines: [
               `**User:** ${newMember.user.toString()} (${newMember.user.tag})`,
               `**ID:** \`${newMember.user.id}\``,
-              `**Before:** ${oldMember.nickname || '*(no nickname)*'}`,
+              `**Before:** ${resolvedOldMember?.nickname || '*(no nickname)*'}`,
               `**After:** ${newMember.nickname || '*(no nickname)*'}`,
             ],
             thumbnail: newMember.user.displayAvatarURL({ dynamic: true }),
