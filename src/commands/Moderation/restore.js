@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } from 'discord.js';
 import { getSavedRoles } from '../../services/roleBackupService.js';
 import { getWelcomeConfig } from '../../utils/database.js';
 import { logger } from '../../utils/logger.js';
@@ -76,10 +76,10 @@ export default {
       console.log(`[DEBUG restore] guild=${guild.id} target=${targetId} savedRoleIds=`, savedRoleIds);
 
       if (!savedRoleIds || savedRoleIds.length === 0) {
-        return sendResponse(interaction, {
-          content: `No saved roles found for **${member.user.tag}**.`,
-          ephemeral: true,
-        });
+        const noRolesEmbed = new EmbedBuilder()
+          .setColor('#000000')
+          .setDescription(`No saved roles found for **${member.user.tag}**.`);
+        return sendResponse(interaction, { embeds: [noRolesEmbed] });
       }
 
       const botMember = guild.members.me || (await guild.members.fetchMe().catch(() => null));
@@ -136,19 +136,32 @@ export default {
       }
 
       const addedNames = rolesToAdd.map((r) => r.name);
-      let reply = addedNames.length > 0
-        ? `Restored ${addedNames.length} role(s) for **${member.user.tag}**: ${addedNames.join(', ')}`
+      
+      let mainText = addedNames.length > 0
+        ? `Restored **${addedNames.length}** role(s) for **${member.user.tag}**:\n${addedNames.map(name => `\`${name}\``).join(', ')}`
         : `**${member.user.tag}** already has all restorable saved roles.`;
 
+      const embed = new EmbedBuilder()
+        .setColor('#000000')
+        .setDescription(mainText)
+        .setThumbnail(member.user.displayAvatarURL({ dynamic: true }))
+        .setTimestamp();
+
       if (skippedRoles.length > 0) {
-        reply += ` (Skipped higher/managed roles: ${skippedRoles.join(', ')})`;
+        embed.addFields({
+          name: 'Skipped Roles (Hierarchy / Bot-Managed)',
+          value: skippedRoles.map(name => `\`${name}\``).join(', '),
+        });
       }
 
       if (missingRoles.length > 0 && addedNames.length === 0) {
-        reply += ` (${missingRoles.length} saved role(s) no longer exist in this server)`;
+        embed.addFields({
+          name: 'Deleted Server Roles',
+          value: `${missingRoles.length} saved role(s) no longer exist in this server.`,
+        });
       }
 
-      return sendResponse(interaction, { content: reply });
+      return sendResponse(interaction, { embeds: [embed] });
     } catch (error) {
       logger.error('Error executing restore command:', error);
       return sendResponse(interaction, {
