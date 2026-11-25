@@ -6,7 +6,7 @@ import { logEvent, EVENT_TYPES } from '../services/loggingService.js';
 import { getServerCounters, updateCounter } from '../services/serverstatsService.js';
 import { getGuildBirthdays, deleteBirthday } from '../utils/database.js';
 import { deleteUserLevelData } from '../services/leveling/leveling.js';
-import { extractRoleIds, saveMemberRoles } from '../services/roleBackupService.js';
+import { extractRoleIds, saveMemberRoles, getSavedRoles } from '../services/roleBackupService.js';
 import { logger } from '../utils/logger.js';
 
 export default {
@@ -20,9 +20,13 @@ export default {
       try {
         if (guild?.id && user?.id) {
           const roles = extractRoleIds(member);
-          // Only attempt a save if Discord cached roles before removal
+          // Only attempt a save if Discord cached non-everyone roles before removal
           if (roles && roles.length > 0) {
             await saveMemberRoles(guild.id, user.id, roles);
+          } else {
+            // Verify if a previous backup already exists so we don't wipe PostgreSQL
+            const existing = await getSavedRoles(guild.id, user.id);
+            logger.debug(`Member left with 0 live roles. Existing DB backup has ${existing.length} roles.`);
           }
         }
       } catch (error) {
