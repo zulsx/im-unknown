@@ -1,6 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { getSavedRoles } from '../../services/roleBackupService.js';
-import { getWelcomeConfig } from '../../utils/database.js';
 import { logger } from '../../utils/logger.js';
 
 export default {
@@ -82,32 +81,11 @@ export default {
         }
       }
 
-      // Add back missing restored roles
       if (rolesToAdd.length > 0) {
         await member.roles.add(
           rolesToAdd,
           `Roles restored by ${interaction.user.tag}`
         );
-      }
-
-      // Fetch welcome config to detect and strip auto-entry / no-access roles
-      const welcomeConfig = await getWelcomeConfig(interaction.client, guild.id).catch(() => null);
-      const entryRoleIds = welcomeConfig?.roleIds || [];
-
-      if (entryRoleIds.length > 0) {
-        // Filter for entry roles the user currently has, excluding any entry role that was intentionally restored
-        const entryRolesToRemove = entryRoleIds.filter(
-          (roleId) => member.roles.cache.has(roleId) && !savedRoleIds.includes(roleId)
-        );
-
-        if (entryRolesToRemove.length > 0) {
-          await member.roles.remove(
-            entryRolesToRemove,
-            `Auto-entry role stripped upon role restoration by ${interaction.user.tag}`
-          ).catch((err) => {
-            logger.warn(`Failed to remove auto-entry role(s) for ${member.id}:`, err);
-          });
-        }
       }
 
       const addedNames = rolesToAdd.map((r) => r.name);
