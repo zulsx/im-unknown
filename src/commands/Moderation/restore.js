@@ -1,63 +1,71 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { getSavedRoles } from '../../services/roleBackupService.js';
 import { getWelcomeConfig } from '../../utils/database.js';
 import { logger } from '../../utils/logger.js';
 
+function extractUserId(rawInput) {
+  if (!rawInput) return null;
+  const match = String(rawInput).trim().match(/^(?:<@!?)?(\d{17,20})>?$/);
+  return match ? match[1] : null;
+}
+
+async function sendResponse(target, payload) {
+  if (typeof target.reply === 'function') {
+    if (target.deferred || target.replied) {
+      return target.editReply(payload);
+    }
+    return target.reply(payload);
+  }
+  return target.channel?.send(payload);
+}
+
 export default {
   data: new SlashCommandBuilder()
     .setName('restore')
-    .setDescription("Restore a member's previously saved server roles")
+    .setDescription("Restore a member's saved roles after they leave, get kicked, or get banned")
     .addUserOption((option) =>
       option
         .setName('user')
-        .setDescription('The member whose roles you want to restore')
+        .setDescription('The user whose roles you want to restore')
         .setRequired(true)
-    ),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles),
 
   async execute(interaction) {
     try {
       const guild = interaction.guild;
       if (!guild) {
-        const msgContent = 'This command can only be used inside a server.';
-        return typeof interaction.reply === 'function'
-          ? interaction.reply({ content: msgContent, ephemeral: true })
-          : interaction.channel?.send(msgContent);
+        return sendResponse(interaction, {
+          content: 'This command can only be used inside a server.',
+          ephemeral: true,
+        });
       }
 
-      // Handle both Slash Commands and Prefix Command args
-      const targetUser = interaction.options?.getUser?.('user') || interaction.targetUser;
-      const targetId =
-        targetUser?.id ||
-        (Array.isArray(interaction.args) ? interaction.args[0]?.replace(/[<@!>]/g, '') : null);
+      const optionUser = interaction.options?.getUser?.('user') || interaction.targetUser || null;
+      const rawArg = Array.isArray(interaction.args) ? interaction.args[0] : null;
+      const targetId = optionUser?.id || extractUserId(rawArg);
 
-      if (!targetId || !/^\d{17,20}$/.test(targetId)) {
-        const msgContent = 'Invalid user ID or mention provided.';
-        return typeof interaction.reply === 'function'
-          ? interaction.reply({ content: msgContent, ephemeral: true })
-          : interaction.channel?.send(msgContent);
+      if (!targetId) {
+        return sendResponse(interaction, {
+          content: 'Please provide a valid user mention or ID, e.g. `restore @user`.',
+          ephemeral: true,
+        });
+      }
+
+      const member = await guild.members.fetch({ user: targetId, force: true }).catch(() => null);
+      if (!member) {
+        return sendResponse(interaction, {
+          content: 'That user is not in the server right now. Have them rejoin first, then run `restore @user`.',
+          ephemeral: true,
+        });
       }
 
       const savedRoleIds = await getSavedRoles(guild.id, targetId);
-
-      // Force fetch the member from Discord API to ensure up-to-date role cache
-      const member = await guild.members.fetch({ user: targetId, force: true }).catch(() => null);
-
-      if (!member) {
-        const msgContent = 'User is not currently in the server. Have them rejoin first, then run restore.';
-        return typeof interaction.reply === 'function'
-          ? interaction.reply({ content: msgContent, ephemeral: true })
-          : interaction.channel?.send(msgContent);
-      }
-
-      logger.info(
-        `[restore] guild=${guild.id} target=${targetId} savedRoleIds=${JSON.stringify(savedRoleIds)} memberRoles=${JSON.stringify([...member.roles.cache.keys()])}`
-      );
-
       if (!savedRoleIds || savedRoleIds.length === 0) {
-        const msgContent = 'No saved roles found for that user.';
-        return typeof interaction.reply === 'function'
-          ? interaction.reply({ content: msgContent, ephemeral: true })
-          : interaction.channel?.send(msgContent);
+        return sendResponse(interaction, {
+          content: `No saved roles found for **${member.user.tag}**.`,
+          ephemeral: true,
+        });
       }
 
       const botMember = guild.members.me || (await guild.members.fetchMe().catch(() => null));
@@ -68,7 +76,9 @@ export default {
       const missingRoles = [];
 
       for (const roleId of savedRoleIds) {
-        const role = guild.roles.cache.get(roleId);
+        if (roleId === guild.id) continue;
+
+        const role = guild.roles.cache.get(roleId) || (await guild.roles.fetch(roleId).catch(() => null));
         if (!role) {
           missingRoles.push(roleId);
           continue;
@@ -87,14 +97,13 @@ export default {
       const executorTag =
         interaction.user?.tag ||
         interaction.author?.tag ||
-        (interaction.member?.user ? interaction.member.user.tag : 'Admin');
+        interaction.member?.user?.tag ||
+        'Moderator';
 
-      // Add back missing restored roles
       if (rolesToAdd.length > 0) {
         await member.roles.add(rolesToAdd, `Roles restored by ${executorTag}`);
       }
 
-      // Fetch welcome config to detect and strip auto-entry / no-access roles
       const welcomeConfig = await getWelcomeConfig(interaction.client, guild.id).catch(() => null);
       const entryRoleIds = welcomeConfig?.roleIds || [];
 
@@ -105,38 +114,33 @@ export default {
 
         if (entryRolesToRemove.length > 0) {
           await member.roles
-            .remove(
-              entryRolesToRemove,
-              `Auto-entry role stripped upon role restoration by ${executorTag}`
-            )
+            .remove(entryRolesToRemove, `Removed auto-entry role after restore by ${executorTag}`)
             .catch((err) => {
-              logger.warn(`Failed to remove auto-entry role(s) for ${member.id}:`, err);
+              logger.warn(`Failed to remove auto-entry roles for ${member.id}:`, err);
             });
         }
       }
 
       const addedNames = rolesToAdd.map((r) => r.name);
-      let reply = addedNames.length
-        ? `Successfully restored ${addedNames.length} role(s) for ${member.user.tag}: **${addedNames.join(', ')}**`
-        : `No new roles needed to be added to ${member.user.tag}.`;
+      let reply = addedNames.length > 0
+        ? `Restored ${addedNames.length} role(s) for **${member.user.tag}**: ${addedNames.join(', ')}`
+        : `**${member.user.tag}** already has all restorable saved roles.`;
 
       if (skippedRoles.length > 0) {
-        reply += ` *(Skipped higher/integration roles: ${skippedRoles.join(', ')})*`;
+        reply += ` (Skipped higher/managed roles: ${skippedRoles.join(', ')})`;
       }
 
       if (missingRoles.length > 0 && addedNames.length === 0) {
-        reply += ` *(${missingRoles.length} saved role ID(s) no longer exist in this server)*`;
+        reply += ` (${missingRoles.length} saved role(s) no longer exist in this server)`;
       }
 
-      return typeof interaction.reply === 'function'
-        ? interaction.reply({ content: reply })
-        : interaction.channel?.send(reply);
+      return sendResponse(interaction, { content: reply });
     } catch (error) {
-      logger.error('Error in restore command:', error);
-      const errMsg = 'Something went wrong while restoring roles. Check my Manage Roles permission and role position.';
-      return typeof interaction.reply === 'function'
-        ? interaction.reply({ content: errMsg, ephemeral: true })
-        : interaction.channel?.send(errMsg);
+      logger.error('Error executing restore command:', error);
+      return sendResponse(interaction, {
+        content: 'Failed to restore roles. Make sure the bot has **Manage Roles** and its highest role is above the roles being restored.',
+        ephemeral: true,
+      });
     }
   },
 };
