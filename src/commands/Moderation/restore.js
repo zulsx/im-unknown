@@ -5,6 +5,9 @@ import { logger } from '../../utils/logger.js';
 
 function extractUserId(rawInput) {
   if (!rawInput) return null;
+  if (typeof rawInput === 'object' && rawInput.id) {
+    return String(rawInput.id);
+  }
   const match = String(rawInput).trim().match(/^(?:<@!?)?(\d{17,20})>?$/);
   return match ? match[1] : null;
 }
@@ -42,8 +45,17 @@ export default {
       }
 
       const optionUser = interaction.options?.getUser?.('user') || interaction.targetUser || null;
+      const optionRaw =
+        interaction.options?.getString?.('user') ??
+        interaction.options?.get?.('user')?.value ??
+        interaction.options?.get?.('user') ??
+        null;
       const rawArg = Array.isArray(interaction.args) ? interaction.args[0] : null;
-      const targetId = optionUser?.id || extractUserId(rawArg);
+
+      const targetId =
+        optionUser?.id ||
+        extractUserId(optionRaw) ||
+        extractUserId(rawArg);
 
       if (!targetId) {
         return sendResponse(interaction, {
@@ -61,6 +73,8 @@ export default {
       }
 
       const savedRoleIds = await getSavedRoles(guild.id, targetId);
+      console.log(`[DEBUG restore] guild=${guild.id} target=${targetId} savedRoleIds=`, savedRoleIds);
+
       if (!savedRoleIds || savedRoleIds.length === 0) {
         return sendResponse(interaction, {
           content: `No saved roles found for **${member.user.tag}**.`,
