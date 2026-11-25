@@ -1,6 +1,6 @@
 import { Events } from 'discord.js';
 import { logEvent, EVENT_TYPES } from '../services/loggingService.js';
-import { extractRoleIds, saveMemberRoles } from '../services/roleBackupService.js';
+import { extractRoleIds, saveMemberRoles, getSavedRoles } from '../services/roleBackupService.js';
 import { logger } from '../utils/logger.js';
 
 export default {
@@ -23,13 +23,23 @@ export default {
         oldRoles.some((id) => !newRoles.includes(id)) ||
         newRoles.some((id) => !oldRoles.includes(id));
 
-      // Save when roles change and the member has non-@everyone roles
       if (rolesChanged && newRoles.length > 0) {
-        console.log(
-          `[DEBUG guildMemberUpdate] saving ${newRoles.length} roles for ${newMember.id} in ${newMember.guild.id}:`,
-          newRoles
-        );
-        await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
+        // Fetch existing backup to prevent autorole on rejoin from overwriting a full backup
+        const existingSaved = await getSavedRoles(newMember.guild.id, newMember.id);
+
+        // If the user currently has fewer roles than what is backed up (e.g. autorole upon rejoin),
+        // do not overwrite the backup!
+        if (existingSaved.length > 0 && newRoles.length < existingSaved.length) {
+          console.log(
+            `[DEBUG guildMemberUpdate] Ignored overwrite for ${newMember.id}: member has ${newRoles.length} live roles, but database holds ${existingSaved.length} saved roles.`
+          );
+        } else {
+          console.log(
+            `[DEBUG guildMemberUpdate] saving ${newRoles.length} roles for ${newMember.id} in ${newMember.guild.id}:`,
+            newRoles
+          );
+          await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
+        }
       }
 
       if (resolvedOldMember?.nickname !== newMember.nickname) {
