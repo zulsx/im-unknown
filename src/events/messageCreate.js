@@ -22,6 +22,16 @@ import {
 const MESSAGE_XP_RATE_LIMIT_ATTEMPTS = 12;
 const MESSAGE_XP_RATE_LIMIT_WINDOW_MS = 10000;
 
+// Auto-response config for your account
+const MY_DISCORD_ID = '1567243650403139655';
+const TRIGGER_WORDS = ['wsg', 'yo', 'hi', 'hello'];
+const BOT_RESPONSES = [
+  'wsp cylo!!!',
+  'Hello cylo!!',
+  'fuck you cylo',
+  'KING CYLO.',
+];
+
 export default {
   name: Events.MessageCreate,
   async execute(message, client) {
@@ -35,6 +45,8 @@ export default {
         return;
       }
 
+      await handleAutoResponse(message);
+
       await handlePrefixCommand(message, client);
 
       await handleLeveling(message, client);
@@ -43,6 +55,22 @@ export default {
     }
   }
 };
+
+async function handleAutoResponse(message) {
+  try {
+    if (message.author.id !== MY_DISCORD_ID) return;
+
+    const userText = message.content.trim().toLowerCase();
+    if (!TRIGGER_WORDS.includes(userText)) return;
+
+    const randomReply =
+      BOT_RESPONSES[Math.floor(Math.random() * BOT_RESPONSES.length)];
+
+    await message.channel.send(randomReply);
+  } catch (error) {
+    logger.error('Error handling auto-response:', error);
+  }
+}
 
 async function handlePrefixCommand(message, client) {
   try {
