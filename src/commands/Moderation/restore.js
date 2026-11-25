@@ -18,33 +18,35 @@ export default {
     try {
       const guild = interaction.guild;
       if (!guild) {
-        return interaction.reply({
-          content: 'This command can only be used inside a server.',
-          ephemeral: true,
-        });
+        const msgContent = 'This command can only be used inside a server.';
+        return typeof interaction.reply === 'function'
+          ? interaction.reply({ content: msgContent, ephemeral: true })
+          : interaction.channel?.send(msgContent);
       }
 
-      const targetUser = interaction.options.getUser('user', true);
-      const targetId = targetUser?.id;
+      // Handle both Slash Commands and Prefix Command args
+      const targetUser = interaction.options?.getUser?.('user') || interaction.targetUser;
+      const targetId =
+        targetUser?.id ||
+        (Array.isArray(interaction.args) ? interaction.args[0]?.replace(/[<@!>]/g, '') : null);
 
       if (!targetId || !/^\d{17,20}$/.test(targetId)) {
-        return interaction.reply({
-          content: 'Invalid user ID or mention provided.',
-          ephemeral: true,
-        });
+        const msgContent = 'Invalid user ID or mention provided.';
+        return typeof interaction.reply === 'function'
+          ? interaction.reply({ content: msgContent, ephemeral: true })
+          : interaction.channel?.send(msgContent);
       }
 
       const savedRoleIds = await getSavedRoles(guild.id, targetId);
 
-      const member =
-        interaction.options.getMember('user') ||
-        (await guild.members.fetch(targetId).catch(() => null));
+      // Force fetch the member from Discord API to ensure up-to-date role cache
+      const member = await guild.members.fetch({ user: targetId, force: true }).catch(() => null);
 
       if (!member) {
-        return interaction.reply({
-          content: 'User is not currently in the server. Have them rejoin first, then run restore.',
-          ephemeral: true,
-        });
+        const msgContent = 'User is not currently in the server. Have them rejoin first, then run restore.';
+        return typeof interaction.reply === 'function'
+          ? interaction.reply({ content: msgContent, ephemeral: true })
+          : interaction.channel?.send(msgContent);
       }
 
       logger.info(
@@ -52,14 +54,14 @@ export default {
       );
 
       if (!savedRoleIds || savedRoleIds.length === 0) {
-        return interaction.reply({
-          content: 'No saved roles found for that user.',
-          ephemeral: true,
-        });
+        const msgContent = 'No saved roles found for that user.';
+        return typeof interaction.reply === 'function'
+          ? interaction.reply({ content: msgContent, ephemeral: true })
+          : interaction.channel?.send(msgContent);
       }
 
-      const botMember = guild.members.me;
-      const botTopRolePos = botMember?.roles.highest.position ?? 0;
+      const botMember = guild.members.me || (await guild.members.fetchMe().catch(() => null));
+      const botTopRolePos = botMember?.roles?.highest?.position ?? 0;
 
       const rolesToAdd = [];
       const skippedRoles = [];
@@ -82,12 +84,14 @@ export default {
         }
       }
 
+      const executorTag =
+        interaction.user?.tag ||
+        interaction.author?.tag ||
+        (interaction.member?.user ? interaction.member.user.tag : 'Admin');
+
       // Add back missing restored roles
       if (rolesToAdd.length > 0) {
-        await member.roles.add(
-          rolesToAdd,
-          `Roles restored by ${interaction.user.tag}`
-        );
+        await member.roles.add(rolesToAdd, `Roles restored by ${executorTag}`);
       }
 
       // Fetch welcome config to detect and strip auto-entry / no-access roles
@@ -95,18 +99,19 @@ export default {
       const entryRoleIds = welcomeConfig?.roleIds || [];
 
       if (entryRoleIds.length > 0) {
-        // Filter for entry roles the user currently has, excluding any entry role that was intentionally restored
         const entryRolesToRemove = entryRoleIds.filter(
           (roleId) => member.roles.cache.has(roleId) && !savedRoleIds.includes(roleId)
         );
 
         if (entryRolesToRemove.length > 0) {
-          await member.roles.remove(
-            entryRolesToRemove,
-            `Auto-entry role stripped upon role restoration by ${interaction.user.tag}`
-          ).catch((err) => {
-            logger.warn(`Failed to remove auto-entry role(s) for ${member.id}:`, err);
-          });
+          await member.roles
+            .remove(
+              entryRolesToRemove,
+              `Auto-entry role stripped upon role restoration by ${executorTag}`
+            )
+            .catch((err) => {
+              logger.warn(`Failed to remove auto-entry role(s) for ${member.id}:`, err);
+            });
         }
       }
 
@@ -123,13 +128,15 @@ export default {
         reply += ` *(${missingRoles.length} saved role ID(s) no longer exist in this server)*`;
       }
 
-      return interaction.reply({ content: reply });
+      return typeof interaction.reply === 'function'
+        ? interaction.reply({ content: reply })
+        : interaction.channel?.send(reply);
     } catch (error) {
       logger.error('Error in restore command:', error);
-      return interaction.reply({
-        content: 'Something went wrong while restoring roles. Check my Manage Roles permission and role position.',
-        ephemeral: true,
-      });
+      const errMsg = 'Something went wrong while restoring roles. Check my Manage Roles permission and role position.';
+      return typeof interaction.reply === 'function'
+        ? interaction.reply({ content: errMsg, ephemeral: true })
+        : interaction.channel?.send(errMsg);
     }
   },
 };
