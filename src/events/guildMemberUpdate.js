@@ -19,7 +19,7 @@ export default {
         oldRoles.some((id) => !newRoles.includes(id)) ||
         newRoles.some((id) => !oldRoles.includes(id));
 
-      // Avoid overwriting an existing backup with an empty snapshot
+      // Always save when roles are assigned or updated, as long as member has assigned roles
       if (rolesChanged && newRoles.length > 0) {
         await saveMemberRoles(newMember.guild.id, newMember.id, newRoles);
       }
