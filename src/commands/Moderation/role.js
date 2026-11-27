@@ -100,39 +100,101 @@ client.on('messageCreate', async (message) => {
 
   const rawRoleInput = args.slice(1).join(' ').trim();
   if (!targetMember || !rawRoleInput) {
-    return message.reply(`Usage: \`${PREFIX}role @user <role name>\` or \`${PREFIX}r @user <role name>\``);
+    return message.reply(
+      `Usage: \`${PREFIX}role @user <role1, role2, ...>\` or \`${PREFIX}r @user <role1, role2, ...>\``
+    );
   }
+
+  // Split by comma to allow any number of roles in a single command
+  const roleQueries = rawRoleInput
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
 
   await message.guild.roles.fetch();
-  const role = findMatchingRole(message.guild.roles.cache, rawRoleInput);
 
-  if (!role) {
-    return message.reply(`Could not find a role matching "${rawRoleInput}".`);
+  const notFound = [];
+  const blockedByBot = [];
+  const blockedByUser = [];
+  const uniqueRoles = new Map();
+
+  for (const query of roleQueries) {
+    const role = findMatchingRole(message.guild.roles.cache, query);
+
+    if (!role) {
+      notFound.push(query);
+      continue;
+    }
+
+    if (role.position >= botMember.roles.highest.position) {
+      blockedByBot.push(role.name);
+      continue;
+    }
+
+    if (
+      role.position >= message.member.roles.highest.position &&
+      message.guild.ownerId !== message.author.id
+    ) {
+      blockedByUser.push(role.name);
+      continue;
+    }
+
+    uniqueRoles.set(role.id, role);
   }
 
-  if (role.position >= botMember.roles.highest.position) {
-    return message.reply(
-      `I cannot manage **${role.name}** because it is above or equal to my highest role.`
-    );
+  const rolesToAdd = [];
+  const rolesToRemove = [];
+
+  for (const role of uniqueRoles.values()) {
+    if (targetMember.roles.cache.has(role.id)) {
+      rolesToRemove.push(role);
+    } else {
+      rolesToAdd.push(role);
+    }
   }
 
-  if (
-    role.position >= message.member.roles.highest.position &&
-    message.guild.ownerId !== message.author.id
-  ) {
-    return message.reply(
-      `You cannot manage **${role.name}** because it is above or equal to your highest role.`
-    );
+  if (rolesToAdd.length === 0 && rolesToRemove.length === 0) {
+    const issues = [];
+    if (notFound.length) issues.push(`Could not find roles matching: ${notFound.join(', ')}`);
+    if (blockedByBot.length) {
+      issues.push(`Above/equal to my highest role: **${blockedByBot.join(', ')}**`);
+    }
+    if (blockedByUser.length) {
+      issues.push(`Above/equal to your highest role: **${blockedByUser.join(', ')}**`);
+    }
+    return message.reply(issues.join('\n') || 'No valid roles to update.');
   }
 
   try {
-    if (targetMember.roles.cache.has(role.id)) {
-      await targetMember.roles.remove(role);
-      return message.reply(`Removed **${role.name}** from ${targetMember.user.tag}.`);
-    } else {
-      await targetMember.roles.add(role);
-      return message.reply(`Added **${role.name}** to ${targetMember.user.tag}.`);
+    if (rolesToAdd.length > 0) {
+      await targetMember.roles.add(rolesToAdd);
     }
+    if (rolesToRemove.length > 0) {
+      await targetMember.roles.remove(rolesToRemove);
+    }
+
+    const lines = [];
+    if (rolesToAdd.length > 0) {
+      lines.push(
+        `Added **${rolesToAdd.map((r) => r.name).join(', ')}** to ${targetMember.user.tag}.`
+      );
+    }
+    if (rolesToRemove.length > 0) {
+      lines.push(
+        `Removed **${rolesToRemove.map((r) => r.name).join(', ')}** from ${targetMember.user.tag}.`
+      );
+    }
+    if (notFound.length > 0) {
+      lines.push(`Could not find roles matching: ${notFound.join(', ')}`);
+    }
+    if (blockedByBot.length > 0) {
+      lines.push(`Skipped (above/equal to my role): **${blockedByBot.join(', ')}**`);
+    }
+    if (blockedByUser.length > 0) {
+      lines.push(`Skipped (above/equal to your role): **${blockedByUser.join(', ')}**`);
+    }
+
+    return message.reply(lines.join('\n'));
   } catch (err) {
     console.error(err);
     return message.reply('Failed to update roles. Check my role hierarchy and permissions.');
